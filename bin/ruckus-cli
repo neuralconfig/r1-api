@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+"""
+RUCKUS One CLI tool.
+
+This script provides a command-line interface for interacting with the RUCKUS One API.
+"""
+
+import os
+import sys
+
+# Add the parent directory to the path to import the SDK
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from ruckus_one.cli.main import main
+
+if __name__ == '__main__':
+    main()
