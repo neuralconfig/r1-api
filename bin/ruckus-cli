@@ -64,7 +64,29 @@ Example: ruckus-cli venue --help
         # Start in interactive mode
         interactive_main()
     else:
-        # Start in command-line mode
+        # Start in command-line mode - pass remaining args to cli_main
+        # First we need to reconstruct sys.argv with the remaining args
+        sys.argv = [sys.argv[0]] + remaining
+        
+        # Pass any global args we've parsed to ensure they're available
+        if args.config:
+            sys.argv.insert(1, '--config')
+            sys.argv.insert(2, args.config)
+        if args.verbose:
+            sys.argv.insert(1, '--verbose')
+        if args.region:
+            sys.argv.insert(1, '--region')
+            sys.argv.insert(2, args.region)
+        if args.client_id:
+            sys.argv.insert(1, '--client-id')
+            sys.argv.insert(2, args.client_id)
+        if args.client_secret:
+            sys.argv.insert(1, '--client-secret')
+            sys.argv.insert(2, args.client_secret)
+        if args.tenant_id:
+            sys.argv.insert(1, '--tenant-id')
+            sys.argv.insert(2, args.tenant_id)
+            
         cli_main()
 
 if __name__ == '__main__':

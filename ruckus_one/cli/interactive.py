@@ -11,6 +11,7 @@ import cmd2
 import configparser
 import json
 import logging
+import shlex
 from typing import Dict, Any, Optional, List, Tuple
 
 from .. import __version__
@@ -19,16 +20,337 @@ from ..exceptions import APIError, AuthenticationError
 from .main import load_config
 
 
+class VenueMode(cmd2.CommandSet):
+    """Command set for venue configuration mode."""
+    
+    def __init__(self, parent):
+        """Initialize the command set."""
+        super().__init__()
+        self.parent = parent
+        
+    def do_list(self, args):
+        """List all venues."""
+        if not self.parent.require_auth():
+            return
+            
+        try:
+            venues = self.parent.client.venues.list(
+                search_string=None,
+                page_size=10,
+                page=0
+            )
+            
+            # Display venues in a table
+            if 'data' in venues and venues['data']:
+                self.parent.poutput("\nVenues:")
+                self.parent.poutput(f"{'ID':<36} | {'Name':<30} | {'City':<20} | {'Country':<10}")
+                self.parent.poutput("-" * 100)
+                
+                for venue in venues['data']:
+                    venue_id = venue.get('id', 'N/A')
+                    name = venue.get('name', 'N/A')
+                    city = venue.get('city', 'N/A')
+                    country = venue.get('country', 'N/A')
+                    self.parent.poutput(f"{venue_id:<36} | {name:<30} | {city:<20} | {country:<10}")
+                
+                self.parent.poutput(f"\nShowing {len(venues['data'])} of {venues.get('totalItems', 'unknown')} venues")
+            else:
+                self.parent.poutput("No venues found.")
+                
+        except APIError as e:
+            self.parent.perror(f"API error: {e}")
+        except Exception as e:
+            self.parent.perror(f"Error: {e}")
+            
+    def do_show(self, args):
+        """Show venue details.
+        
+        Usage: show <venue-id>
+        """
+        if not self.parent.require_auth():
+            return
+            
+        # Get venue ID from arguments
+        args = shlex.split(args)
+        if not args:
+            self.parent.perror("Venue ID is required")
+            return
+            
+        venue_id = args[0]
+        
+        try:
+            venue = self.parent.client.venues.get(venue_id)
+            
+            # Display venue details
+            self.parent.poutput("\nVenue Details:")
+            self.parent.poutput(f"ID: {venue.get('id', 'N/A')}")
+            self.parent.poutput(f"Name: {venue.get('name', 'N/A')}")
+            self.parent.poutput(f"Address: {venue.get('addressLine', 'N/A')}")
+            self.parent.poutput(f"City: {venue.get('city', 'N/A')}")
+            self.parent.poutput(f"State/Province: {venue.get('stateOrProvince', 'N/A')}")
+            self.parent.poutput(f"Country: {venue.get('country', 'N/A')}")
+            self.parent.poutput(f"Postal Code: {venue.get('postalCode', 'N/A')}")
+            self.parent.poutput(f"Timezone: {venue.get('timezone', 'N/A')}")
+            self.parent.poutput(f"Status: {venue.get('status', 'N/A')}")
+            
+        except APIError as e:
+            self.parent.perror(f"API error: {e}")
+        except Exception as e:
+            self.parent.perror(f"Error: {e}")
+
+
+class APMode(cmd2.CommandSet):
+    """Command set for AP configuration mode."""
+    
+    def __init__(self, parent):
+        """Initialize the command set."""
+        super().__init__()
+        self.parent = parent
+        
+    def do_list(self, args):
+        """List access points.
+        
+        Usage: list [venue-id]
+        """
+        if not self.parent.require_auth():
+            return
+            
+        # Get venue ID from arguments if provided
+        args = shlex.split(args)
+        venue_id = args[0] if args else None
+        
+        try:
+            filters = {}
+            if venue_id:
+                filters["venueId"] = venue_id
+                
+            aps = self.parent.client.aps.list(
+                search_string=None,
+                page_size=10,
+                page=0,
+                **filters
+            )
+            
+            # Display APs in a table
+            if 'data' in aps and aps['data']:
+                self.parent.poutput("\nAccess Points:")
+                self.parent.poutput(f"{'Serial':<15} | {'Name':<25} | {'Model':<12} | {'Status':<8} | {'Venue ID':<36}")
+                self.parent.poutput("-" * 100)
+                
+                for ap in aps['data']:
+                    serial = ap.get('serialNumber', 'N/A')
+                    name = ap.get('name', 'N/A')
+                    model = ap.get('model', 'N/A')
+                    status = ap.get('status', 'N/A')
+                    venue_id = ap.get('venueId', 'N/A')
+                    self.parent.poutput(f"{serial:<15} | {name:<25} | {model:<12} | {status:<8} | {venue_id:<36}")
+                
+                self.parent.poutput(f"\nShowing {len(aps['data'])} of {aps.get('totalItems', 'unknown')} access points")
+            else:
+                self.parent.poutput("No access points found.")
+                
+        except APIError as e:
+            self.parent.perror(f"API error: {e}")
+        except Exception as e:
+            self.parent.perror(f"Error: {e}")
+    
+    def do_show(self, args):
+        """Show access point details.
+        
+        Usage: show <venue-id> <ap-serial>
+        """
+        if not self.parent.require_auth():
+            return
+            
+        # Get venue ID and AP serial from arguments
+        args = shlex.split(args)
+        if len(args) < 2:
+            self.parent.perror("Venue ID and AP serial are required")
+            return
+            
+        venue_id = args[0]
+        ap_serial = args[1]
+        
+        try:
+            ap = self.parent.client.aps.get(venue_id, ap_serial)
+            
+            # Display AP details
+            self.parent.poutput("\nAccess Point Details:")
+            self.parent.poutput(f"Serial: {ap.get('serialNumber', 'N/A')}")
+            self.parent.poutput(f"Name: {ap.get('name', 'N/A')}")
+            self.parent.poutput(f"Model: {ap.get('model', 'N/A')}")
+            self.parent.poutput(f"Status: {ap.get('status', 'N/A')}")
+            self.parent.poutput(f"MAC: {ap.get('macAddress', 'N/A')}")
+            self.parent.poutput(f"IP: {ap.get('ipAddress', 'N/A')}")
+            self.parent.poutput(f"Firmware: {ap.get('firmwareVersion', 'N/A')}")
+            self.parent.poutput(f"Venue ID: {ap.get('venueId', 'N/A')}")
+            
+        except APIError as e:
+            self.parent.perror(f"API error: {e}")
+        except Exception as e:
+            self.parent.perror(f"Error: {e}")
+
+
+class SwitchMode(cmd2.CommandSet):
+    """Command set for Switch configuration mode."""
+    
+    def __init__(self, parent):
+        """Initialize the command set."""
+        super().__init__()
+        self.parent = parent
+        
+    def do_list(self, args):
+        """List switches."""
+        if not self.parent.require_auth():
+            return
+            
+        try:
+            switches = self.parent.client.switches.list({
+                "pageSize": 10,
+                "page": 0,
+                "sortOrder": "ASC"
+            })
+            
+            # Display switches in a table
+            if 'data' in switches and switches['data']:
+                self.parent.poutput("\nSwitches:")
+                self.parent.poutput(f"{'ID':<36} | {'Name':<25} | {'Model':<15} | {'Status':<8} | {'Venue ID':<36}")
+                self.parent.poutput("-" * 100)
+                
+                for switch in switches['data']:
+                    switch_id = switch.get('id', 'N/A')
+                    name = switch.get('name', 'N/A')
+                    model = switch.get('model', 'N/A')
+                    status = switch.get('status', 'N/A')
+                    venue_id = switch.get('venueId', 'N/A')
+                    self.parent.poutput(f"{switch_id:<36} | {name:<25} | {model:<15} | {status:<8} | {venue_id:<36}")
+                
+                self.parent.poutput(f"\nShowing {len(switches['data'])} of {switches.get('totalItems', 'unknown')} switches")
+            else:
+                self.parent.poutput("No switches found.")
+                
+        except APIError as e:
+            self.parent.perror(f"API error: {e}")
+        except Exception as e:
+            self.parent.perror(f"Error: {e}")
+    
+    def do_show(self, args):
+        """Show switch details.
+        
+        Usage: show <switch-id>
+        """
+        if not self.parent.require_auth():
+            return
+            
+        # Get switch ID from arguments
+        args = shlex.split(args)
+        if not args:
+            self.parent.perror("Switch ID is required")
+            return
+            
+        switch_id = args[0]
+        
+        try:
+            # Get switch details
+            switch = self.parent.client.switches.get(switch_id)
+            
+            # Display switch details
+            self.parent.poutput("\nSwitch Details:")
+            self.parent.poutput(f"ID: {switch.get('id', 'N/A')}")
+            self.parent.poutput(f"Name: {switch.get('name', 'N/A')}")
+            self.parent.poutput(f"Model: {switch.get('model', 'N/A')}")
+            self.parent.poutput(f"Serial: {switch.get('serialNumber', 'N/A')}")
+            self.parent.poutput(f"Status: {switch.get('status', 'N/A')}")
+            self.parent.poutput(f"IP: {switch.get('ip', 'N/A')}")
+            self.parent.poutput(f"Firmware: {switch.get('firmwareVersion', 'N/A')}")
+            self.parent.poutput(f"Venue ID: {switch.get('venueId', 'N/A')}")
+            
+        except APIError as e:
+            self.parent.perror(f"API error: {e}")
+        except Exception as e:
+            self.parent.perror(f"Error: {e}")
+
+
+class WLANMode(cmd2.CommandSet):
+    """Command set for WLAN configuration mode."""
+    
+    def __init__(self, parent):
+        """Initialize the command set."""
+        super().__init__()
+        self.parent = parent
+        
+    def do_list(self, args):
+        """List WLANs."""
+        if not self.parent.require_auth():
+            return
+            
+        try:
+            wlans = self.parent.client.wlans.list(
+                search_string=None,
+                page_size=10,
+                page=0
+            )
+            
+            # Display WLANs in a table
+            if 'data' in wlans and wlans['data']:
+                self.parent.poutput("\nWLANs:")
+                self.parent.poutput(f"{'ID':<36} | {'Name':<25} | {'SSID':<20} | {'Security':<15} | {'VLAN':<5}")
+                self.parent.poutput("-" * 100)
+                
+                for wlan in wlans['data']:
+                    wlan_id = wlan.get('id', 'N/A')
+                    name = wlan.get('name', 'N/A')
+                    ssid = wlan.get('ssid', 'N/A')
+                    security = wlan.get('securityProtocol', 'N/A')
+                    vlan = wlan.get('vlan', 'N/A')
+                    self.parent.poutput(f"{wlan_id:<36} | {name:<25} | {ssid:<20} | {security:<15} | {vlan:<5}")
+                
+                self.parent.poutput(f"\nShowing {len(wlans['data'])} of {wlans.get('totalItems', 'unknown')} WLANs")
+            else:
+                self.parent.poutput("No WLANs found.")
+                
+        except APIError as e:
+            self.parent.perror(f"API error: {e}")
+        except Exception as e:
+            self.parent.perror(f"Error: {e}")
+    
+    def do_show(self, args):
+        """Show WLAN details.
+        
+        Usage: show <wlan-id>
+        """
+        if not self.parent.require_auth():
+            return
+            
+        # Get WLAN ID from arguments
+        args = shlex.split(args)
+        if not args:
+            self.parent.perror("WLAN ID is required")
+            return
+            
+        wlan_id = args[0]
+        
+        try:
+            wlan = self.parent.client.wlans.get(wlan_id)
+            
+            # Display WLAN details
+            self.parent.poutput("\nWLAN Details:")
+            self.parent.poutput(f"ID: {wlan.get('id', 'N/A')}")
+            self.parent.poutput(f"Name: {wlan.get('name', 'N/A')}")
+            self.parent.poutput(f"SSID: {wlan.get('ssid', 'N/A')}")
+            self.parent.poutput(f"Description: {wlan.get('description', 'N/A')}")
+            self.parent.poutput(f"Security: {wlan.get('securityProtocol', 'N/A')}")
+            self.parent.poutput(f"VLAN: {wlan.get('vlan', 'N/A')}")
+            self.parent.poutput(f"Hidden: {wlan.get('hiddenSsid', False)}")
+            
+        except APIError as e:
+            self.parent.perror(f"API error: {e}")
+        except Exception as e:
+            self.parent.perror(f"Error: {e}")
+
+
 class RuckusOneCLI(cmd2.Cmd):
     """Interactive CLI for the RUCKUS One SDK."""
-    
-    # Command categories
-    CATEGORY_GENERAL = 'General Commands'
-    CATEGORY_VENUE = 'Venue Commands'
-    CATEGORY_AP = 'Access Point Commands'
-    CATEGORY_SWITCH = 'Switch Commands'
-    CATEGORY_WLAN = 'WLAN Commands'
-    CATEGORY_VLAN = 'VLAN Commands'
     
     def __init__(self):
         """Initialize the interactive CLI."""
@@ -39,19 +361,26 @@ class RuckusOneCLI(cmd2.Cmd):
             persistent_history_file='~/.ruckus_one_history',
             command_sets=[],
             shortcuts={
-                '?': 'help',
                 'exit': 'quit',
-                'ls': 'list',
-                'h': 'history'
+                'ls': 'list'
             },
             include_ipy=False
         )
+        
+        # Enable question mark for help
+        self.register_postparsing_hook(self._handle_question_mark)
         
         # Configure cmd2 prompt and intro
         self.prompt = 'RUCKUS> '
         self.intro = f"""
 RUCKUS One SDK Interactive CLI v{__version__}
-Type ? for help, TAB for command completion, exit to quit.
+Type '?' for help, TAB for command completion, 'exit' to quit.
+
+Enter configuration mode with:
+  venue        - Configure venues
+  ap           - Configure access points
+  switch       - Configure switches
+  wlan         - Configure wireless networks
         """
         
         # Configure logging
@@ -72,20 +401,55 @@ Type ? for help, TAB for command completion, exit to quit.
             'region': 'na'
         }
         
+        # Create command sets for different configuration modes
+        self.venue_mode = VenueMode(self)
+        self.ap_mode = APMode(self)
+        self.switch_mode = SwitchMode(self)
+        self.wlan_mode = WLANMode(self)
+        
+    def _handle_question_mark(self, data: cmd2.plugin.PostparsingData) -> cmd2.plugin.PostparsingData:
+        """Handle '?' at the end of a command for context-sensitive help."""
+        if data.statement.raw.endswith('?'):
+            # Get the command without the '?'
+            command = data.statement.raw.rstrip('?').strip()
+            
+            if command:
+                # Check if it's an existing command
+                if hasattr(self, f'do_{command}') or command in self.shortcuts:
+                    # Show help for that command
+                    self.poutput(self.get_help_string(command))
+                    data.stop = True
+                else:
+                    # Show available commands starting with this prefix
+                    matches = [cmd[3:] for cmd in dir(self) if cmd.startswith('do_') and cmd[3:].startswith(command)]
+                    if matches:
+                        self.poutput(f"Commands matching '{command}':")
+                        for match in matches:
+                            self.poutput(f"  {match}")
+                    else:
+                        self.poutput(f"No commands matching '{command}'")
+                    data.stop = True
+            else:
+                # Show help menu
+                self.do_help('')
+                data.stop = True
+                
+        return data
+        
     # --------- Authentication commands ---------
     
     auth_parser = cmd2.Cmd2ArgumentParser(description='Authenticate with RUCKUS One API')
     auth_parser.add_argument('-c', '--config', help='Path to config.ini file')
-    auth_parser.add_argument('--client_id', help='RUCKUS One OAuth2 client ID')
-    auth_parser.add_argument('--client_secret', help='RUCKUS One OAuth2 client secret')
-    auth_parser.add_argument('--tenant_id', help='RUCKUS One tenant ID')
+    auth_parser.add_argument('--client-id', help='RUCKUS One OAuth2 client ID')
+    auth_parser.add_argument('--client-secret', help='RUCKUS One OAuth2 client secret')
+    auth_parser.add_argument('--tenant-id', help='RUCKUS One tenant ID')
     auth_parser.add_argument('--region', help='RUCKUS One API region (na, eu, asia)')
     
-    @cmd2.with_category(CATEGORY_GENERAL)
-    @cmd2.with_argparser(auth_parser)
     def do_authenticate(self, args):
         """Authenticate with the RUCKUS One API."""
         try:
+            args = self.auth_parser.parse_args(args.arg_list)
+            
             if args.config:
                 self.config_path = args.config
                 config = load_config(args.config)
@@ -134,7 +498,6 @@ Type ? for help, TAB for command completion, exit to quit.
         """Read a token with getpass to hide the input."""
         return self.read_secure(prompt_text)
     
-    @cmd2.with_category(CATEGORY_GENERAL)
     def do_status(self, _):
         """Show current authentication status."""
         if not self.client:
@@ -147,314 +510,130 @@ Type ? for help, TAB for command completion, exit to quit.
         self.poutput(f"  Config file: {self.config_path or 'Not using config file'}")
         self.poutput("  Authenticated: Yes")
     
-    # --------- Venue commands ---------
+    # --------- Configuration mode commands ---------
     
-    venue_list_parser = cmd2.Cmd2ArgumentParser(description='List venues')
-    venue_list_parser.add_argument('--search', help='Search string')
-    venue_list_parser.add_argument('--page-size', type=int, default=10, help='Page size')
-    venue_list_parser.add_argument('--page', type=int, default=0, help='Page number')
-    
-    venue_get_parser = cmd2.Cmd2ArgumentParser(description='Get venue details')
-    venue_get_parser.add_argument('id', help='Venue ID')
-    
-    @cmd2.with_category(CATEGORY_VENUE)
-    @cmd2.with_argparser(venue_list_parser)
-    def do_list_venues(self, args):
-        """List venues."""
-        if not self.client:
-            self.perror("Not authenticated. Use 'authenticate' first.")
+    def do_venue(self, _):
+        """Enter venue configuration mode."""
+        if not self.require_auth():
             return
-        
-        try:
-            venues = self.client.venues.list(
-                search_string=args.search,
-                page_size=args.page_size,
-                page=args.page
-            )
             
-            # Display venues in a table
-            if 'data' in venues and venues['data']:
-                self.poutput("\nVenues:")
-                self.poutput(f"{'ID':<36} | {'Name':<30} | {'City':<20} | {'Country':<10}")
-                self.poutput("-" * 100)
-                
-                for venue in venues['data']:
-                    venue_id = venue.get('id', 'N/A')
-                    name = venue.get('name', 'N/A')
-                    city = venue.get('city', 'N/A')
-                    country = venue.get('country', 'N/A')
-                    self.poutput(f"{venue_id:<36} | {name:<30} | {city:<20} | {country:<10}")
-                
-                self.poutput(f"\nShowing {len(venues['data'])} of {venues.get('totalItems', 'unknown')} venues")
-            else:
-                self.poutput("No venues found.")
-                
-        except APIError as e:
-            self.perror(f"API error: {e}")
-        except Exception as e:
-            self.perror(f"Error: {e}")
+        # Create a sub-shell for venue commands
+        venue_shell = cmd2.CommandSet()
+        venue_shell.do_list = self.venue_mode.do_list
+        venue_shell.do_show = self.venue_mode.do_show
+        
+        self.poutput("Entering venue configuration mode. Type 'exit' to return to main menu.")
+        self.poutput("Available commands: list, show")
+        
+        old_prompt = self.prompt
+        self.prompt = self.prompt.replace('>', '/venue>')
+        
+        # Run command loop for venue mode
+        self._run_cmd_mode(venue_shell)
+        
+        # Restore prompt
+        self.prompt = old_prompt
     
-    @cmd2.with_category(CATEGORY_VENUE)
-    @cmd2.with_argparser(venue_get_parser)
-    def do_show_venue(self, args):
-        """Show venue details."""
-        if not self.client:
-            self.perror("Not authenticated. Use 'authenticate' first.")
+    def do_ap(self, _):
+        """Enter access point configuration mode."""
+        if not self.require_auth():
             return
+            
+        # Create a sub-shell for AP commands
+        ap_shell = cmd2.CommandSet()
+        ap_shell.do_list = self.ap_mode.do_list
+        ap_shell.do_show = self.ap_mode.do_show
         
-        try:
-            venue = self.client.venues.get(args.id)
-            
-            # Display venue details
-            self.poutput("\nVenue Details:")
-            self.poutput(f"ID: {venue.get('id', 'N/A')}")
-            self.poutput(f"Name: {venue.get('name', 'N/A')}")
-            self.poutput(f"Address: {venue.get('addressLine', 'N/A')}")
-            self.poutput(f"City: {venue.get('city', 'N/A')}")
-            self.poutput(f"State/Province: {venue.get('stateOrProvince', 'N/A')}")
-            self.poutput(f"Country: {venue.get('country', 'N/A')}")
-            self.poutput(f"Postal Code: {venue.get('postalCode', 'N/A')}")
-            self.poutput(f"Timezone: {venue.get('timezone', 'N/A')}")
-            self.poutput(f"Status: {venue.get('status', 'N/A')}")
-            
-        except APIError as e:
-            self.perror(f"API error: {e}")
-        except Exception as e:
-            self.perror(f"Error: {e}")
+        self.poutput("Entering AP configuration mode. Type 'exit' to return to main menu.")
+        self.poutput("Available commands: list, show")
+        
+        old_prompt = self.prompt
+        self.prompt = self.prompt.replace('>', '/ap>')
+        
+        # Run command loop for AP mode
+        self._run_cmd_mode(ap_shell)
+        
+        # Restore prompt
+        self.prompt = old_prompt
     
-    # --------- AP commands ---------
-    
-    ap_list_parser = cmd2.Cmd2ArgumentParser(description='List access points')
-    ap_list_parser.add_argument('--venue-id', help='Venue ID')
-    ap_list_parser.add_argument('--search', help='Search string')
-    ap_list_parser.add_argument('--page-size', type=int, default=10, help='Page size')
-    ap_list_parser.add_argument('--page', type=int, default=0, help='Page number')
-    
-    ap_get_parser = cmd2.Cmd2ArgumentParser(description='Get AP details')
-    ap_get_parser.add_argument('venue_id', help='Venue ID')
-    ap_get_parser.add_argument('serial', help='AP serial number')
-    
-    @cmd2.with_category(CATEGORY_AP)
-    @cmd2.with_argparser(ap_list_parser)
-    def do_list_aps(self, args):
-        """List access points."""
-        if not self.client:
-            self.perror("Not authenticated. Use 'authenticate' first.")
+    def do_switch(self, _):
+        """Enter switch configuration mode."""
+        if not self.require_auth():
             return
-        
-        try:
-            filters = {}
-            if args.venue_id:
-                filters["venueId"] = args.venue_id
-                
-            aps = self.client.aps.list(
-                search_string=args.search,
-                page_size=args.page_size,
-                page=args.page,
-                **filters
-            )
             
-            # Display APs in a table
-            if 'data' in aps and aps['data']:
-                self.poutput("\nAccess Points:")
-                self.poutput(f"{'Serial':<15} | {'Name':<25} | {'Model':<12} | {'Status':<8} | {'Venue ID':<36}")
-                self.poutput("-" * 100)
-                
-                for ap in aps['data']:
-                    serial = ap.get('serialNumber', 'N/A')
-                    name = ap.get('name', 'N/A')
-                    model = ap.get('model', 'N/A')
-                    status = ap.get('status', 'N/A')
-                    venue_id = ap.get('venueId', 'N/A')
-                    self.poutput(f"{serial:<15} | {name:<25} | {model:<12} | {status:<8} | {venue_id:<36}")
-                
-                self.poutput(f"\nShowing {len(aps['data'])} of {aps.get('totalItems', 'unknown')} access points")
-            else:
-                self.poutput("No access points found.")
-                
-        except APIError as e:
-            self.perror(f"API error: {e}")
-        except Exception as e:
-            self.perror(f"Error: {e}")
+        # Create a sub-shell for switch commands
+        switch_shell = cmd2.CommandSet()
+        switch_shell.do_list = self.switch_mode.do_list
+        switch_shell.do_show = self.switch_mode.do_show
+        
+        self.poutput("Entering switch configuration mode. Type 'exit' to return to main menu.")
+        self.poutput("Available commands: list, show")
+        
+        old_prompt = self.prompt
+        self.prompt = self.prompt.replace('>', '/switch>')
+        
+        # Run command loop for switch mode
+        self._run_cmd_mode(switch_shell)
+        
+        # Restore prompt
+        self.prompt = old_prompt
     
-    @cmd2.with_category(CATEGORY_AP)
-    @cmd2.with_argparser(ap_get_parser)
-    def do_show_ap(self, args):
-        """Show access point details."""
-        if not self.client:
-            self.perror("Not authenticated. Use 'authenticate' first.")
+    def do_wlan(self, _):
+        """Enter WLAN configuration mode."""
+        if not self.require_auth():
             return
+            
+        # Create a sub-shell for WLAN commands
+        wlan_shell = cmd2.CommandSet()
+        wlan_shell.do_list = self.wlan_mode.do_list
+        wlan_shell.do_show = self.wlan_mode.do_show
         
-        try:
-            ap = self.client.aps.get(args.venue_id, args.serial)
-            
-            # Display AP details
-            self.poutput("\nAccess Point Details:")
-            self.poutput(f"Serial: {ap.get('serialNumber', 'N/A')}")
-            self.poutput(f"Name: {ap.get('name', 'N/A')}")
-            self.poutput(f"Model: {ap.get('model', 'N/A')}")
-            self.poutput(f"Status: {ap.get('status', 'N/A')}")
-            self.poutput(f"MAC: {ap.get('macAddress', 'N/A')}")
-            self.poutput(f"IP: {ap.get('ipAddress', 'N/A')}")
-            self.poutput(f"Firmware: {ap.get('firmwareVersion', 'N/A')}")
-            self.poutput(f"Venue ID: {ap.get('venueId', 'N/A')}")
-            
-        except APIError as e:
-            self.perror(f"API error: {e}")
-        except Exception as e:
-            self.perror(f"Error: {e}")
-    
-    # --------- WLAN commands ---------
-    
-    wlan_list_parser = cmd2.Cmd2ArgumentParser(description='List WLANs')
-    wlan_list_parser.add_argument('--search', help='Search string')
-    wlan_list_parser.add_argument('--page-size', type=int, default=10, help='Page size')
-    wlan_list_parser.add_argument('--page', type=int, default=0, help='Page number')
-    
-    wlan_get_parser = cmd2.Cmd2ArgumentParser(description='Get WLAN details')
-    wlan_get_parser.add_argument('id', help='WLAN ID')
-    
-    @cmd2.with_category(CATEGORY_WLAN)
-    @cmd2.with_argparser(wlan_list_parser)
-    def do_list_wlans(self, args):
-        """List WLANs."""
-        if not self.client:
-            self.perror("Not authenticated. Use 'authenticate' first.")
-            return
+        self.poutput("Entering WLAN configuration mode. Type 'exit' to return to main menu.")
+        self.poutput("Available commands: list, show")
         
-        try:
-            wlans = self.client.wlans.list(
-                search_string=args.search,
-                page_size=args.page_size,
-                page=args.page
-            )
-            
-            # Display WLANs in a table
-            if 'data' in wlans and wlans['data']:
-                self.poutput("\nWLANs:")
-                self.poutput(f"{'ID':<36} | {'Name':<25} | {'SSID':<20} | {'Security':<15} | {'VLAN':<5}")
-                self.poutput("-" * 100)
-                
-                for wlan in wlans['data']:
-                    wlan_id = wlan.get('id', 'N/A')
-                    name = wlan.get('name', 'N/A')
-                    ssid = wlan.get('ssid', 'N/A')
-                    security = wlan.get('securityProtocol', 'N/A')
-                    vlan = wlan.get('vlan', 'N/A')
-                    self.poutput(f"{wlan_id:<36} | {name:<25} | {ssid:<20} | {security:<15} | {vlan:<5}")
-                
-                self.poutput(f"\nShowing {len(wlans['data'])} of {wlans.get('totalItems', 'unknown')} WLANs")
-            else:
-                self.poutput("No WLANs found.")
-                
-        except APIError as e:
-            self.perror(f"API error: {e}")
-        except Exception as e:
-            self.perror(f"Error: {e}")
-    
-    @cmd2.with_category(CATEGORY_WLAN)
-    @cmd2.with_argparser(wlan_get_parser)
-    def do_show_wlan(self, args):
-        """Show WLAN details."""
-        if not self.client:
-            self.perror("Not authenticated. Use 'authenticate' first.")
-            return
+        old_prompt = self.prompt
+        self.prompt = self.prompt.replace('>', '/wlan>')
         
-        try:
-            wlan = self.client.wlans.get(args.id)
-            
-            # Display WLAN details
-            self.poutput("\nWLAN Details:")
-            self.poutput(f"ID: {wlan.get('id', 'N/A')}")
-            self.poutput(f"Name: {wlan.get('name', 'N/A')}")
-            self.poutput(f"SSID: {wlan.get('ssid', 'N/A')}")
-            self.poutput(f"Description: {wlan.get('description', 'N/A')}")
-            self.poutput(f"Security: {wlan.get('securityProtocol', 'N/A')}")
-            self.poutput(f"VLAN: {wlan.get('vlan', 'N/A')}")
-            self.poutput(f"Hidden: {wlan.get('hiddenSsid', False)}")
-            
-        except APIError as e:
-            self.perror(f"API error: {e}")
-        except Exception as e:
-            self.perror(f"Error: {e}")
-
-    # --------- Switch commands ---------
-    
-    switch_list_parser = cmd2.Cmd2ArgumentParser(description='List switches')
-    switch_list_parser.add_argument('--search', help='Search string')
-    switch_list_parser.add_argument('--page-size', type=int, default=10, help='Page size')
-    switch_list_parser.add_argument('--page', type=int, default=0, help='Page number')
-    
-    switch_get_parser = cmd2.Cmd2ArgumentParser(description='Get switch details')
-    switch_get_parser.add_argument('id', help='Switch ID')
-    
-    @cmd2.with_category(CATEGORY_SWITCH)
-    @cmd2.with_argparser(switch_list_parser)
-    def do_list_switches(self, args):
-        """List switches."""
-        if not self.client:
-            self.perror("Not authenticated. Use 'authenticate' first.")
-            return
+        # Run command loop for WLAN mode
+        self._run_cmd_mode(wlan_shell)
         
-        try:
-            switches = self.client.switches.list({
-                "pageSize": args.page_size,
-                "page": args.page,
-                "sortOrder": "ASC"
-            })
-            
-            # Display switches in a table
-            if 'data' in switches and switches['data']:
-                self.poutput("\nSwitches:")
-                self.poutput(f"{'ID':<36} | {'Name':<25} | {'Model':<15} | {'Status':<8} | {'Venue ID':<36}")
-                self.poutput("-" * 100)
-                
-                for switch in switches['data']:
-                    switch_id = switch.get('id', 'N/A')
-                    name = switch.get('name', 'N/A')
-                    model = switch.get('model', 'N/A')
-                    status = switch.get('status', 'N/A')
-                    venue_id = switch.get('venueId', 'N/A')
-                    self.poutput(f"{switch_id:<36} | {name:<25} | {model:<15} | {status:<8} | {venue_id:<36}")
-                
-                self.poutput(f"\nShowing {len(switches['data'])} of {switches.get('totalItems', 'unknown')} switches")
-            else:
-                self.poutput("No switches found.")
-                
-        except APIError as e:
-            self.perror(f"API error: {e}")
-        except Exception as e:
-            self.perror(f"Error: {e}")
+        # Restore prompt
+        self.prompt = old_prompt
     
-    @cmd2.with_category(CATEGORY_SWITCH)
-    @cmd2.with_argparser(switch_get_parser)
-    def do_show_switch(self, args):
-        """Show switch details."""
-        if not self.client:
-            self.perror("Not authenticated. Use 'authenticate' first.")
-            return
+    def _run_cmd_mode(self, cmd_set):
+        """Run a nested command set as a sub-shell."""
+        # Add command set to the context
+        self.register_command_set(cmd_set)
         
-        try:
-            # Get switch details
-            switch = self.client.switches.get(args.id)
+        # Exit command for this mode
+        def do_exit(_):
+            """Exit the current configuration mode."""
+            return True
             
-            # Display switch details
-            self.poutput("\nSwitch Details:")
-            self.poutput(f"ID: {switch.get('id', 'N/A')}")
-            self.poutput(f"Name: {switch.get('name', 'N/A')}")
-            self.poutput(f"Model: {switch.get('model', 'N/A')}")
-            self.poutput(f"Serial: {switch.get('serialNumber', 'N/A')}")
-            self.poutput(f"Status: {switch.get('status', 'N/A')}")
-            self.poutput(f"IP: {switch.get('ip', 'N/A')}")
-            self.poutput(f"Firmware: {switch.get('firmwareVersion', 'N/A')}")
-            self.poutput(f"Venue ID: {switch.get('venueId', 'N/A')}")
-            
-        except APIError as e:
-            self.perror(f"API error: {e}")
-        except Exception as e:
-            self.perror(f"Error: {e}")
-
-    # Helper method to check authentication 
+        setattr(cmd_set, 'do_exit', do_exit)
+        
+        # Create a local command loop
+        exit_code = False
+        while not exit_code:
+            try:
+                line = self.read_line()
+                if line == 'exit':
+                    break
+                stmt = self.statement_parser.parse(line)
+                if stmt.command in [cmd[3:] for cmd in dir(cmd_set) if cmd.startswith('do_')]:
+                    func = getattr(cmd_set, f'do_{stmt.command}')
+                    exit_code = func(' '.join(stmt.args))
+                else:
+                    # Use the main cmd2 processing
+                    exit_code = self.onecmd_plus_hooks(line)
+            except KeyboardInterrupt:
+                self.poutput("^C")
+                
+        # Remove command set to clean up
+        self.unregister_command_set(cmd_set)
+    
+    # Helper methods
+    
     def require_auth(self) -> bool:
         """Check if client is authenticated and print error if not."""
         if not self.client:
