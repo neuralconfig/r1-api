@@ -3,15 +3,41 @@
 RUCKUS One CLI tool.
 
 This script provides a command-line interface for interacting with the RUCKUS One API.
+It supports both command-line mode and interactive mode.
 """
 
 import os
 import sys
+import argparse
 
 # Add the parent directory to the path to import the SDK
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from ruckus_one.cli.main import main
+from ruckus_one import __version__
+from ruckus_one.cli.main import main as cli_main
+from ruckus_one.cli.interactive import main as interactive_main
+
+def main():
+    """Main entry point for the CLI tool."""
+    # Top-level parser
+    parser = argparse.ArgumentParser(
+        description='RUCKUS One CLI tool v{}'.format(__version__))
+    
+    # Global arguments
+    parser.add_argument('--version', action='version', 
+                      version='%(prog)s {}'.format(__version__))
+    parser.add_argument('--interactive', '-i', action='store_true', 
+                      help='Start in interactive mode')
+    
+    # Parse just the known args to check for interactive mode
+    args, remaining = parser.parse_known_args()
+    
+    if args.interactive:
+        # Start in interactive mode
+        interactive_main()
+    else:
+        # Start in command-line mode
+        cli_main()
 
 if __name__ == '__main__':
     main()

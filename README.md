@@ -147,7 +147,11 @@ The SDK is organized into modules, each handling a specific aspect of the RUCKUS
 
 ## CLI Tool
 
-The SDK includes a command-line interface for common operations:
+The SDK includes a command-line interface for common operations with two modes of operation:
+
+### Command-Line Mode
+
+In command-line mode, you execute individual commands directly:
 
 ```bash
 # List venues
@@ -161,6 +165,68 @@ The SDK includes a command-line interface for common operations:
 
 # Use a config file for authentication
 ./bin/ruckus-cli --config /path/to/config.ini venue list
+```
+
+### Interactive Mode (Network Switch-Like Interface)
+
+Interactive mode provides a network switch-like experience with tab completion, command history, and "?" help:
+
+```bash
+# Start the interactive CLI
+./bin/ruckus-cli --interactive
+```
+
+Once in interactive mode, you'll see a prompt where you can enter commands:
+
+```
+RUCKUS> authenticate --config /path/to/config.ini
+RUCKUS> list_venues
+RUCKUS> show_ap VENUE_ID SERIAL_NUMBER
+```
+
+Key features of interactive mode:
+- Tab completion for commands and arguments
+- Use "?" to get help on any command
+- Built-in command history (use up/down arrows)
+- Organized command categories
+- Table-formatted output
+
+Example interactive session:
+```
+RUCKUS> ?
+Documented commands (use 'help -v' for verbose/'help <topic>' for details):
+
+Access Point Commands
+=====================
+list_aps  show_ap
+
+General Commands
+===============
+authenticate  help  history  quit  status
+
+Switch Commands
+=============
+list_switches  show_switch
+
+Venue Commands
+=============
+list_venues  show_venue
+
+WLAN Commands
+============
+list_wlans  show_wlan
+
+RUCKUS> authenticate --config config.ini
+Successfully authenticated with RUCKUS One API
+Region: na
+Tenant ID: 95d4369d7134419ea680726ec84197b0
+
+RUCKUS(na)> list_venues
+
+Venues:
+ID                                   | Name                           | City                 | Country   
+----------------------------------------------------------------------------------------------------
+8dae5704ae1043a19f620a5a44cded96    | US Test Venue                  | San Francisco        | US       
 ```
 
 ### CLI Authentication
@@ -184,6 +250,11 @@ You can provide authentication credentials to the CLI tool in three ways:
    ```bash
    ./bin/ruckus-cli --config /path/to/config.ini venue list
    ```
+
+In interactive mode, you can authenticate with:
+```
+RUCKUS> authenticate --config /path/to/config.ini
+```
 
 The CLI tool will check for credentials in the following order:
 1. Command-line arguments
