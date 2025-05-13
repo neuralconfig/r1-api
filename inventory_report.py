@@ -46,14 +46,9 @@ def load_config():
 def get_venues(venues_module):
     """Get all venues accessible with the credentials."""
     logger.info("Getting venues...")
-    query_data = {
-        "pageSize": 100,
-        "page": 0,
-        "sortOrder": "ASC"
-    }
-    
+    # The API requires just basic pagination parameters without any additional structure
     try:
-        venues_result = venues_module.list(query_data)
+        venues_result = venues_module.list(page_size=100, page=0, sort_order="ASC")
         venues_list = venues_result.get('data', [])
         logger.info(f"Found {len(venues_list)} venues")
         return venues_list
@@ -124,7 +119,16 @@ def get_switch_ports(switches_module, switch_id=None):
         return []
 
 def get_wlans(wlans_module, venue_id=None):
-    """Get all WLANs (WiFi networks)."""
+    """
+    Get all WLANs (WiFi networks).
+    
+    Args:
+        wlans_module: WLANs module instance
+        venue_id: Optional venue ID to filter WLANs by venue
+        
+    Returns:
+        List of WLAN dictionaries
+    """
     logger.info("Getting WLANs...")
     query_data = {
         "pageSize": 100,
@@ -133,9 +137,10 @@ def get_wlans(wlans_module, venue_id=None):
     }
     
     try:
+        # Just get all WLANs - we'll filter by venue using deployment info later
         wlans_result = wlans_module.list(query_data)
         wlans_list = wlans_result.get('data', [])
-        logger.info(f"Found {len(wlans_list)} WLANs")
+        logger.info(f"Found {len(wlans_list)} total WLANs")
         return wlans_list
     except Exception as e:
         logger.error(f"Error getting WLANs: {e}")
@@ -164,27 +169,76 @@ def generate_report():
     
     # Initialize the client
     print(f"Initializing client with region: {region}")
-    client = RuckusOneClient(client_id=client_id, client_secret=client_secret, tenant_id=tenant_id, region=region)
+    try:
+        client = RuckusOneClient(client_id=client_id, client_secret=client_secret, tenant_id=tenant_id, region=region)
+    except Exception as e:
+        logger.error(f"Failed to initialize client: {e}")
+        raise
     
     # Initialize modules
     venues_module = Venues(client)
     ap_module = AccessPoints(client)
     switches_module = Switches(client)
     wlan_module = WLANs(client)
+    vlans_module = client.vlans  # Get the VLAN module from the client
     
-    # Get all data
+    # Get all data with proper error handling
     venues = get_venues(venues_module)
     aps = get_access_points(ap_module)
     switches = get_switches(switches_module)
     switch_ports = get_switch_ports(switches_module)
+    
+    # Get all WLANs
     wlans = get_wlans(wlan_module)
+    
+    # Create a mapping of venue IDs to their WLANs
+    venue_wlans_map = {}
+    for venue in venues:
+        venue_id = venue.get('id')
+        venue_wlans_map[venue_id] = []
+    
+    # Get active WLANs from the list and associate them with venues
+    active_wlans = []
+    for wlan in wlans:
+        client_count = wlan.get('clientCount', 0)
+        # Only include WLANs that have clients or are marked as active
+        if client_count > 0 or wlan.get('status') == 'ACTIVE':
+            active_wlans.append(wlan)
+    
+    # Use only the venueApGroups field to determine WLAN-venue associations
+    # This is the most reliable source according to our analysis
+    logger.info("Finding WLANs for each venue...")
+    for venue in venues:
+        venue_id = venue.get('id')
+        venue_name = venue.get('name')
+        
+        # Map WLANs to venues using venueApGroups field only
+        for wlan in wlans:
+            wlan_venue_groups = wlan.get('venueApGroups', [])
+            if any(group.get('venueId') == venue_id for group in wlan_venue_groups):
+                if not any(w.get('id') == wlan.get('id') for w in venue_wlans_map[venue_id]):
+                    venue_wlans_map[venue_id].append(wlan)
+        
+        logger.info(f"Found {len(venue_wlans_map[venue_id])} WLANs for venue '{venue_name}'")
+    
+    # Log venue WLAN counts
+    for venue_id, venue_wlans in venue_wlans_map.items():
+        # Find venue name for better logging
+        venue_name = next((v.get('name', 'Unknown') for v in venues if v.get('id') == venue_id), 'Unknown')
+        logger.info(f"Venue '{venue_name}' (ID: {venue_id}) has {len(venue_wlans)} associated WLANs")
+        # List WLAN names for debugging
+        for wlan in venue_wlans:
+            logger.debug(f"  - WLAN: {wlan.get('name')} (ID: {wlan.get('id')})")
+    
+    # We're removing VLAN functionality as requested
     
     # Generate report
     report = []
     
     # Report header
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     report.append("=" * 80)
-    report.append(f"RUCKUS ONE INVENTORY REPORT - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    report.append(f"RUCKUS ONE INVENTORY REPORT - {timestamp}")
     report.append("=" * 80)
     report.append("")
     
@@ -193,6 +247,17 @@ def generate_report():
     report.append("-" * 80)
     report.append(f"Tenant ID: {tenant_id}")
     report.append(f"Region: {region}")
+    report.append(f"Generated: {timestamp}")
+    report.append("")
+    
+    # Overall summary
+    report.append("OVERALL SUMMARY")
+    report.append("-" * 80)
+    report.append(f"Total venues: {len(venues)}")
+    report.append(f"Total access points: {len(aps)}")
+    report.append(f"Total switches: {len(switches)}")
+    report.append(f"Total switch ports: {len(switch_ports)}")
+    report.append(f"Total WLANs: {len(wlans)}")
     report.append("")
     
     # Venues summary
@@ -209,7 +274,7 @@ def generate_report():
         venue_name = venue.get('name', 'Unnamed')
         venue_aps = [ap for ap in aps if ap.get('venueId') == venue_id]
         venue_switches = [switch for switch in switches if switch.get('venueId') == venue_id]
-        venue_wlans = []  # We can't easily filter WLANs by venue from the current data
+        venue_wlans = venue_wlans_map.get(venue_id, [])
         
         report.append(f"Venue: {venue_name} (ID: {venue_id})")
         report.append(f"  Address: {venue.get('addressLine', 'N/A')}")
@@ -218,6 +283,16 @@ def generate_report():
         report.append(f"  Status: {venue.get('status', 'N/A')}")
         report.append(f"  AP Count: {len(venue_aps)}")
         report.append(f"  Switch Count: {len(venue_switches)}")
+        report.append(f"  WLAN Count: {len(venue_wlans)}")
+        
+        # List the WLANs for this venue if any exist
+        if venue_wlans:
+            report.append("  WLANs:")
+            for wlan in venue_wlans:
+                wlan_name = wlan.get('name', 'Unnamed')
+                wlan_ssid = wlan.get('ssid', 'Unknown SSID')
+                report.append(f"    - {wlan_name} (SSID: {wlan_ssid})")
+        
         report.append("")
     
     # Access Points summary
