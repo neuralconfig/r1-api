@@ -21,13 +21,41 @@ def main():
     """Main entry point for the CLI tool."""
     # Top-level parser
     parser = argparse.ArgumentParser(
-        description='RUCKUS One CLI tool v{}'.format(__version__))
+        description='RUCKUS One CLI tool v{}'.format(__version__),
+        epilog="""
+USAGE EXAMPLES:
+  Command-line mode:
+    ruckus-cli venue list
+    ruckus-cli venue get --id YOUR_VENUE_ID
+    ruckus-cli ap list --venue-id YOUR_VENUE_ID
+    ruckus-cli --config config.ini wlan list
+
+  Interactive mode:
+    ruckus-cli --interactive
+
+AVAILABLE COMMAND GROUPS:
+  venue        - Venue management commands
+  ap           - Access Point management commands
+  switch       - Switch management commands
+  wlan         - WLAN management commands
+
+Run 'ruckus-cli <command_group> --help' for more information on a specific command group.
+Example: ruckus-cli venue --help
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     
     # Global arguments
     parser.add_argument('--version', action='version', 
                       version='%(prog)s {}'.format(__version__))
     parser.add_argument('--interactive', '-i', action='store_true', 
-                      help='Start in interactive mode')
+                      help='Start in interactive mode (network switch-like CLI)')
+    parser.add_argument('--config', '-c', help='Path to config.ini file with API credentials')
+    parser.add_argument('--verbose', '-v', action='store_true', 
+                      help='Enable verbose logging')
+    parser.add_argument('--region', help='RUCKUS One API region (na, eu, asia)')
+    parser.add_argument('--client-id', help='RUCKUS One OAuth2 client ID')
+    parser.add_argument('--client-secret', help='RUCKUS One OAuth2 client secret')
+    parser.add_argument('--tenant-id', help='RUCKUS One tenant ID')
     
     # Parse just the known args to check for interactive mode
     args, remaining = parser.parse_known_args()
