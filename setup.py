@@ -31,5 +31,6 @@ setup(
     python_requires=">=3.7",
     install_requires=[
         "requests>=2.25.0",
+        "cmd2>=2.4.0",
     ],
 )

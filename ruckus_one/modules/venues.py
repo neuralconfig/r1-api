@@ -35,7 +35,8 @@ class Venues:
              page_size: int = 100, 
              page: int = 0, 
              sort_field: Optional[str] = None, 
-             sort_order: str = "ASC") -> Dict[str, Any]:
+             sort_order: str = "ASC",
+             data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         List venues with optional filtering.
         
@@ -45,25 +46,31 @@ class Venues:
             page: Page number to retrieve
             sort_field: Field to sort by
             sort_order: Sort order ("ASC" or "DESC") - must be uppercase
+            data: Optional direct data dictionary (overrides other parameters if provided)
             
         Returns:
             Dict containing venues and pagination information
         """
-        data = {
-            "pageSize": page_size,
-            "page": page,
-            "sortOrder": sort_order.upper()  # API requires uppercase sort order
-        }
-        
-        if search_string:
-            data["searchString"] = search_string
+        # If direct data dictionary is provided, use it (for backward compatibility)
+        if data is not None:
+            query_data = data
+        else:
+            # Otherwise, build the data dictionary from the parameters
+            query_data = {
+                "pageSize": page_size,
+                "page": page,
+                "sortOrder": sort_order.upper()  # API requires uppercase sort order
+            }
             
-        if sort_field:
-            data["sortField"] = sort_field
+            if search_string:
+                query_data["searchString"] = search_string
+                
+            if sort_field:
+                query_data["sortField"] = sort_field
         
-        logger.debug(f"Listing venues with parameters: {data}")
+        logger.debug(f"Listing venues with parameters: {query_data}")
         try:
-            result = self.client.post("/venues/query", data=data)
+            result = self.client.post("/venues/query", data=query_data)
             logger.debug(f"List venues response keys: {list(result.keys()) if result else 'No result'}")
             return result
         except Exception as e:

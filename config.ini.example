@@ -1,0 +1,8 @@
+[credentials]
+# RUCKUS One API credentials
+# Copy this file to config.ini and fill in your actual credentials
+
+client_id = YOUR_CLIENT_ID_HERE
+client_secret = YOUR_CLIENT_SECRET_HERE
+tenant_id = YOUR_TENANT_ID_HERE
+region = na  # Options: na, eu, asia
