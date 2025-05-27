@@ -19,6 +19,9 @@ from ruckus_one.cli.interactive import main as interactive_main
 
 def main():
     """Main entry point for the CLI tool."""
+    import logging
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+    
     # Top-level parser
     parser = argparse.ArgumentParser(
         description='RUCKUS One CLI tool v{}'.format(__version__),
@@ -38,6 +41,7 @@ AVAILABLE COMMAND GROUPS:
   ap           - Access Point management commands
   switch       - Switch management commands
   wlan         - WLAN management commands
+  dpsk         - DPSK (Dynamic Pre-Shared Key) management commands
 
 Run 'ruckus-cli <command_group> --help' for more information on a specific command group.
 Example: ruckus-cli venue --help
@@ -60,33 +64,21 @@ Example: ruckus-cli venue --help
     # Parse just the known args to check for interactive mode
     args, remaining = parser.parse_known_args()
     
+    # Set the config environment variable if provided
+    if args.config:
+        os.environ['RUCKUS_CONFIG_FILE'] = args.config
+        logging.debug(f"Set RUCKUS_CONFIG_FILE to {args.config}")
+        
     if args.interactive:
         # Start in interactive mode
+        # Pass config file to interactive mode if provided
+        if args.config:
+            sys.argv = [sys.argv[0], '--config', args.config]
+            
         interactive_main()
     else:
-        # Start in command-line mode - pass remaining args to cli_main
-        # First we need to reconstruct sys.argv with the remaining args
-        sys.argv = [sys.argv[0]] + remaining
-        
-        # Pass any global args we've parsed to ensure they're available
-        if args.config:
-            sys.argv.insert(1, '--config')
-            sys.argv.insert(2, args.config)
-        if args.verbose:
-            sys.argv.insert(1, '--verbose')
-        if args.region:
-            sys.argv.insert(1, '--region')
-            sys.argv.insert(2, args.region)
-        if args.client_id:
-            sys.argv.insert(1, '--client-id')
-            sys.argv.insert(2, args.client_id)
-        if args.client_secret:
-            sys.argv.insert(1, '--client-secret')
-            sys.argv.insert(2, args.client_secret)
-        if args.tenant_id:
-            sys.argv.insert(1, '--tenant-id')
-            sys.argv.insert(2, args.tenant_id)
-            
+        # With the bin/ruckus-cli changes, just go back to using sys.argv
+        # which the main CLI is already set up to handle
         cli_main()
 
 if __name__ == '__main__':

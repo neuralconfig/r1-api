@@ -68,14 +68,39 @@ def get_client(args: argparse.Namespace) -> RuckusOneClient:
     """
     # Load config from file if specified
     config = {}
-    if args.config:
-        config = load_config(args.config)
+    config_file = None
+    
+    # Check args for config
+    if hasattr(args, 'config') and args.config:
+        config_file = args.config
+        
+    # Check environment variable for config
+    if not config_file and 'RUCKUS_CONFIG_FILE' in os.environ:
+        config_file = os.environ['RUCKUS_CONFIG_FILE']
+        
+    if config_file:
+        logging.debug(f"Loading config from file: {config_file}")
+        config = load_config(config_file)
+        logging.debug(f"Config loaded: {config}")
     
     # Get credentials from arguments, config file, or environment variables (in that order)
-    region = args.region or config.get('region') or os.environ.get('RUCKUS_API_REGION', 'na')
-    client_id = args.client_id or config.get('client_id') or os.environ.get('RUCKUS_API_CLIENT_ID')
-    client_secret = args.client_secret or config.get('client_secret') or os.environ.get('RUCKUS_API_CLIENT_SECRET')
-    tenant_id = args.tenant_id or config.get('tenant_id') or os.environ.get('RUCKUS_API_TENANT_ID')
+    region = (getattr(args, 'region', None) or 
+              config.get('region') or 
+              os.environ.get('RUCKUS_API_REGION', 'na'))
+    
+    client_id = (getattr(args, 'client_id', None) or 
+                config.get('client_id') or 
+                os.environ.get('RUCKUS_API_CLIENT_ID'))
+    
+    client_secret = (getattr(args, 'client_secret', None) or 
+                    config.get('client_secret') or 
+                    os.environ.get('RUCKUS_API_CLIENT_SECRET'))
+    
+    tenant_id = (getattr(args, 'tenant_id', None) or 
+                config.get('tenant_id') or 
+                os.environ.get('RUCKUS_API_TENANT_ID'))
+    
+    logging.debug(f"Credentials: region={region}, client_id={client_id}, tenant_id={tenant_id}")
     
     if not client_id:
         raise AuthenticationError("Client ID is required (--client-id, config file, or RUCKUS_API_CLIENT_ID)")
@@ -85,12 +110,15 @@ def get_client(args: argparse.Namespace) -> RuckusOneClient:
         raise AuthenticationError("Tenant ID is required (--tenant-id, config file, or RUCKUS_API_TENANT_ID)")
     
     # Create and return client
-    return RuckusOneClient(
+    logging.debug("Creating RuckusOneClient...")
+    client = RuckusOneClient(
         client_id=client_id,
         client_secret=client_secret,
         tenant_id=tenant_id,
         region=region
     )
+    logging.debug("RuckusOneClient created successfully")
+    return client
 
 
 def handle_venue_commands(args: argparse.Namespace, client: RuckusOneClient) -> Any:
@@ -299,6 +327,103 @@ def handle_wlan_commands(args: argparse.Namespace, client: RuckusOneClient) -> A
         return {"message": f"WLAN {args.id} undeployed from venue {args.venue_id}"}
 
 
+def handle_dpsk_commands(args: argparse.Namespace, client: RuckusOneClient) -> Any:
+    """
+    Handle DPSK commands.
+    
+    Args:
+        args: Command line arguments
+        client: RUCKUS One API client
+    
+    Returns:
+        Command result
+    """
+    if args.dpsk_command == 'list':
+        # List DPSK services
+        filters = {}
+        if args.search:
+            filters['searchString'] = args.search
+        if args.page_size:
+            filters['pageSize'] = args.page_size
+        if args.page is not None:
+            filters['page'] = args.page
+            
+        return client.dpsk.list_services(filters=filters if filters else None)
+    elif args.dpsk_command == 'get':
+        # Get DPSK service details
+        if not args.id:
+            raise ValueError("DPSK service ID is required for 'get' command")
+        return client.dpsk.get_service(args.id)
+    elif args.dpsk_command == 'create':
+        # Create DPSK service
+        if not args.name:
+            raise ValueError("DPSK service name is required for 'create' command")
+            
+        kwargs = {
+            'passphraseFormat': args.passphrase_format,
+            'passphraseLength': args.passphrase_length,
+            'expirationType': args.expiration_type
+        }
+        
+        if args.device_limit:
+            kwargs['deviceCountLimit'] = args.device_limit
+            
+        return client.dpsk.create_service(args.name, **kwargs)
+    elif args.dpsk_command == 'delete':
+        # Delete DPSK service
+        if not args.id:
+            raise ValueError("DPSK service ID is required for 'delete' command")
+        client.dpsk.delete_service(args.id)
+        return {"message": f"DPSK service {args.id} deleted successfully"}
+    elif args.dpsk_command == 'passphrase-list':
+        # List passphrases
+        if not args.service_id:
+            raise ValueError("DPSK service ID is required for 'passphrase-list' command")
+            
+        filters = {}
+        if args.page_size:
+            filters['pageSize'] = args.page_size
+        if args.page is not None:
+            filters['page'] = args.page
+            
+        return client.dpsk.list_passphrases(args.service_id, 
+                                          filters=filters if filters else None)
+    elif args.dpsk_command == 'passphrase-create':
+        # Create passphrases
+        if not args.service_id:
+            raise ValueError("DPSK service ID is required for 'passphrase-create' command")
+        if not args.username:
+            raise ValueError("Username is required for 'passphrase-create' command")
+            
+        passphrases = []
+        for i in range(args.count):
+            passphrase_data = {
+                'userName': f"{args.username}" if args.count == 1 else f"{args.username}_{i+1}"
+            }
+            if args.passphrase:
+                passphrase_data['passphrase'] = args.passphrase
+            if args.email:
+                passphrase_data['email'] = args.email
+                
+            passphrases.append(passphrase_data)
+            
+        return client.dpsk.create_passphrases(args.service_id, passphrases)
+    elif args.dpsk_command == 'export':
+        # Export passphrases to CSV
+        if not args.service_id:
+            raise ValueError("DPSK service ID is required for 'export' command")
+            
+        csv_data = client.dpsk.export_passphrases_csv(args.service_id)
+        
+        if args.output_file:
+            with open(args.output_file, 'w') as f:
+                f.write(csv_data)
+            return {"message": f"Passphrases exported to {args.output_file}"}
+        else:
+            # Return CSV data to be printed
+            return {"csv": csv_data}
+
+
 def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(description='RUCKUS One CLI')
@@ -426,6 +551,59 @@ def main() -> None:
     wlan_undeploy_parser.add_argument('--venue-id', required=True, help='Venue ID')
     wlan_undeploy_parser.add_argument('--ap-group-id', help='AP group ID')
     
+    # DPSK commands
+    dpsk_parser = subparsers.add_parser('dpsk', help='DPSK commands')
+    dpsk_subparsers = dpsk_parser.add_subparsers(dest='dpsk_command', help='DPSK command')
+    
+    # DPSK list command
+    dpsk_list_parser = dpsk_subparsers.add_parser('list', help='List DPSK services')
+    dpsk_list_parser.add_argument('--search', help='Search string')
+    dpsk_list_parser.add_argument('--page-size', type=int, help='Page size')
+    dpsk_list_parser.add_argument('--page', type=int, help='Page number')
+    
+    # DPSK get command
+    dpsk_get_parser = dpsk_subparsers.add_parser('get', help='Get DPSK service details')
+    dpsk_get_parser.add_argument('--id', required=True, help='DPSK service ID')
+    
+    # DPSK create command
+    dpsk_create_parser = dpsk_subparsers.add_parser('create', help='Create a new DPSK service')
+    dpsk_create_parser.add_argument('--name', required=True, help='DPSK service name')
+    dpsk_create_parser.add_argument('--passphrase-format', choices=['MOST_SECURED', 'SECURED', 'SIMPLE'], 
+                                   default='MOST_SECURED', help='Passphrase format')
+    dpsk_create_parser.add_argument('--passphrase-length', type=int, default=18, 
+                                   help='Passphrase length')
+    dpsk_create_parser.add_argument('--device-limit', type=int, help='Device count limit')
+    dpsk_create_parser.add_argument('--expiration-type', 
+                                   choices=['NEVER', 'SPECIFIED_DATE', 'DURATION_FROM_FIRST_USE'],
+                                   default='NEVER', help='Expiration type')
+    
+    # DPSK delete command
+    dpsk_delete_parser = dpsk_subparsers.add_parser('delete', help='Delete a DPSK service')
+    dpsk_delete_parser.add_argument('--id', required=True, help='DPSK service ID')
+    
+    # DPSK passphrase list command
+    dpsk_pp_list_parser = dpsk_subparsers.add_parser('passphrase-list', 
+                                                    help='List passphrases in a DPSK service')
+    dpsk_pp_list_parser.add_argument('--service-id', required=True, help='DPSK service ID')
+    dpsk_pp_list_parser.add_argument('--page-size', type=int, help='Page size')
+    dpsk_pp_list_parser.add_argument('--page', type=int, help='Page number')
+    
+    # DPSK passphrase create command
+    dpsk_pp_create_parser = dpsk_subparsers.add_parser('passphrase-create', 
+                                                      help='Create passphrases')
+    dpsk_pp_create_parser.add_argument('--service-id', required=True, help='DPSK service ID')
+    dpsk_pp_create_parser.add_argument('--username', required=True, help='Username')
+    dpsk_pp_create_parser.add_argument('--passphrase', help='Specific passphrase (optional)')
+    dpsk_pp_create_parser.add_argument('--email', help='Email address')
+    dpsk_pp_create_parser.add_argument('--count', type=int, default=1, 
+                                     help='Number of passphrases to create')
+    
+    # DPSK export command
+    dpsk_export_parser = dpsk_subparsers.add_parser('export', 
+                                                   help='Export passphrases to CSV')
+    dpsk_export_parser.add_argument('--service-id', required=True, help='DPSK service ID')
+    dpsk_export_parser.add_argument('--output-file', help='Output CSV file (default: stdout)')
+    
     # Parse arguments
     args = parser.parse_args()
     
@@ -439,16 +617,22 @@ def main() -> None:
         
     try:
         # Create client
-        client = get_client(args)
+        try:
+            client = get_client(args)
+        except Exception as e:
+            logging.error(f"Error creating client: {e}")
+            sys.exit(1)
         
         # Handle commands
         result = None
-        if args.command == 'venue' and args.venue_command:
+        if args.command == 'venue' and hasattr(args, 'venue_command') and args.venue_command:
             result = handle_venue_commands(args, client)
-        elif args.command == 'ap' and args.ap_command:
+        elif args.command == 'ap' and hasattr(args, 'ap_command') and args.ap_command:
             result = handle_ap_commands(args, client)
-        elif args.command == 'wlan' and args.wlan_command:
+        elif args.command == 'wlan' and hasattr(args, 'wlan_command') and args.wlan_command:
             result = handle_wlan_commands(args, client)
+        elif args.command == 'dpsk' and hasattr(args, 'dpsk_command') and args.dpsk_command:
+            result = handle_dpsk_commands(args, client)
         else:
             # Subcommand missing
             if args.command == 'venue':
@@ -457,11 +641,16 @@ def main() -> None:
                 ap_parser.print_help()
             elif args.command == 'wlan':
                 wlan_parser.print_help()
+            elif args.command == 'dpsk':
+                dpsk_parser.print_help()
             sys.exit(1)
             
         # Output result
         if result:
-            if args.output == 'json':
+            # Handle special case for CSV export
+            if isinstance(result, dict) and 'csv' in result:
+                print(result['csv'])
+            elif args.output == 'json':
                 print(json.dumps(result, indent=2))
             elif args.output == 'table':
                 # Simple table output (just for example)

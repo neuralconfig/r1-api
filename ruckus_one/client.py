@@ -65,13 +65,17 @@ class RuckusOneClient:
         self.base_url = f"https://{RUCKUS_REGIONS.get(region, RUCKUS_REGIONS['na'])}"
         self.tenant_id = tenant_id
         
-        # Attach resource modules (will be populated by the modules themselves)
+        # Initialize placeholder for resource modules
         self.venues = None
         self.aps = None
         self.switches = None
         self.wlans = None
         self.vlans = None
         self.clients = None
+        self.dpsk = None
+        
+        # Automatically initialize the modules
+        self._init_modules()
         
     def request(
         self,
@@ -138,7 +142,8 @@ class RuckusOneClient:
             # Log response content for debugging (be careful with sensitive data)
             if response.content:
                 try:
-                    if response.headers.get('Content-Type', '').startswith('application/json'):
+                    content_type = response.headers.get('Content-Type', '')
+                    if 'application/json' in content_type or 'json' in content_type:
                         logger.debug(f"Response JSON: {response.json()}")
                     else:
                         logger.debug(f"Response content length: {len(response.content)} bytes")
@@ -151,7 +156,9 @@ class RuckusOneClient:
                     return response
                 
                 # Return response data if successful
-                if response.content and response.headers.get('Content-Type', '').startswith('application/json'):
+                content_type = response.headers.get('Content-Type', '')
+                # Check for JSON content types (including vendor-specific ones)
+                if response.content and ('application/json' in content_type or 'json' in content_type):
                     return response.json()
                 return response.content
             
@@ -182,7 +189,8 @@ class RuckusOneClient:
         
         # Try to parse error details from response
         try:
-            if response.content and response.headers.get('Content-Type', '').startswith('application/json'):
+            content_type = response.headers.get('Content-Type', '')
+            if response.content and ('application/json' in content_type or 'json' in content_type):
                 error_data = response.json()
                 error_detail = error_data.get('message') or error_data.get('error') or error_data
         except ValueError:
@@ -275,3 +283,29 @@ class RuckusOneClient:
             API response data
         """
         return self.request('DELETE', path, **kwargs)
+        
+    def _init_modules(self):
+        """
+        Initialize all API modules.
+        
+        This method is called during client initialization to ensure
+        all module references are properly set up.
+        """
+        # Import modules here to avoid circular imports
+        from .modules.venues import Venues
+        from .modules.access_points import AccessPoints
+        from .modules.switches import Switches
+        from .modules.wlans import WLANs
+        from .modules.vlans import VLANs
+        from .modules.dpsk import DPSK
+        
+        # Initialize modules (they will register themselves with the client)
+        Venues(self)
+        AccessPoints(self) 
+        Switches(self)
+        WLANs(self)
+        VLANs(self)
+        DPSK(self)
+        
+        # Log module initialization
+        logger.debug("All API modules initialized successfully")
