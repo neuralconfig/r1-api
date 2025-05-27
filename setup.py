@@ -33,4 +33,13 @@ setup(
         "requests>=2.25.0",
         "cmd2>=2.4.0",
     ],
+    entry_points={
+        'console_scripts': [
+            'ruckus-cli=ruckus_one.cli.main:main',
+            'ruckus-interactive=ruckus_one.cli.interactive:main',
+        ],
+    },
+    scripts=[
+        'bin/ruckus-cli',
+    ],
 )

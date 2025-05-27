@@ -439,11 +439,12 @@ Enter configuration mode with:
     # --------- Authentication commands ---------
     
     auth_parser = cmd2.Cmd2ArgumentParser(description='Authenticate with RUCKUS One API')
-    auth_parser.add_argument('-c', '--config', help='Path to config.ini file')
-    auth_parser.add_argument('--client-id', help='RUCKUS One OAuth2 client ID')
-    auth_parser.add_argument('--client-secret', help='RUCKUS One OAuth2 client secret')
-    auth_parser.add_argument('--tenant-id', help='RUCKUS One tenant ID')
-    auth_parser.add_argument('--region', help='RUCKUS One API region (na, eu, asia)')
+    auth_group = auth_parser.add_argument_group('Authentication Options')
+    auth_group.add_argument('-c', '--config', help='Path to config.ini file')
+    auth_group.add_argument('--client-id', help='RUCKUS One OAuth2 client ID')
+    auth_group.add_argument('--client-secret', help='RUCKUS One OAuth2 client secret')
+    auth_group.add_argument('--tenant-id', help='RUCKUS One tenant ID')
+    auth_group.add_argument('--region', help='RUCKUS One API region (na, eu, asia)')
     
     def do_authenticate(self, args):
         """Authenticate with the RUCKUS One API."""
@@ -517,6 +518,11 @@ Enter configuration mode with:
         if not self.require_auth():
             return
             
+        # Check if we're already in a configuration mode
+        if '/' in self.prompt:
+            self.poutput("Exit current mode first with 'exit' before entering a new configuration mode.")
+            return
+            
         # Create a sub-shell for venue commands
         venue_shell = cmd2.CommandSet()
         venue_shell.do_list = self.venue_mode.do_list
@@ -537,6 +543,11 @@ Enter configuration mode with:
     def do_ap(self, _):
         """Enter access point configuration mode."""
         if not self.require_auth():
+            return
+            
+        # Check if we're already in a configuration mode
+        if '/' in self.prompt:
+            self.poutput("Exit current mode first with 'exit' before entering a new configuration mode.")
             return
             
         # Create a sub-shell for AP commands
@@ -561,6 +572,11 @@ Enter configuration mode with:
         if not self.require_auth():
             return
             
+        # Check if we're already in a configuration mode
+        if '/' in self.prompt:
+            self.poutput("Exit current mode first with 'exit' before entering a new configuration mode.")
+            return
+            
         # Create a sub-shell for switch commands
         switch_shell = cmd2.CommandSet()
         switch_shell.do_list = self.switch_mode.do_list
@@ -583,6 +599,11 @@ Enter configuration mode with:
         if not self.require_auth():
             return
             
+        # Check if we're already in a configuration mode
+        if '/' in self.prompt:
+            self.poutput("Exit current mode first with 'exit' before entering a new configuration mode.")
+            return
+            
         # Create a sub-shell for WLAN commands
         wlan_shell = cmd2.CommandSet()
         wlan_shell.do_list = self.wlan_mode.do_list
@@ -602,35 +623,57 @@ Enter configuration mode with:
     
     def _run_cmd_mode(self, cmd_set):
         """Run a nested command set as a sub-shell."""
-        # Add command set to the context
-        self.register_command_set(cmd_set)
-        
-        # Exit command for this mode
-        def do_exit(_):
-            """Exit the current configuration mode."""
-            return True
+        try:
+            # Add command set to the context
+            self.register_command_set(cmd_set)
             
-        setattr(cmd_set, 'do_exit', do_exit)
-        
-        # Create a local command loop
-        exit_code = False
-        while not exit_code:
-            try:
-                line = self.read_line()
-                if line == 'exit':
-                    break
-                stmt = self.statement_parser.parse(line)
-                if stmt.command in [cmd[3:] for cmd in dir(cmd_set) if cmd.startswith('do_')]:
-                    func = getattr(cmd_set, f'do_{stmt.command}')
-                    exit_code = func(' '.join(stmt.args))
-                else:
-                    # Use the main cmd2 processing
-                    exit_code = self.onecmd_plus_hooks(line)
-            except KeyboardInterrupt:
-                self.poutput("^C")
+            # Exit command for this mode
+            def do_exit(_):
+                """Exit the current configuration mode."""
+                return True
                 
-        # Remove command set to clean up
-        self.unregister_command_set(cmd_set)
+            setattr(cmd_set, 'do_exit', do_exit)
+            
+            # Create a local command loop
+            exit_code = False
+            while not exit_code:
+                try:
+                    line = input(self.prompt)
+                    if not line or line.strip() == "":
+                        continue
+                    if line.strip() == 'exit':
+                        break
+                        
+                    # Handle command in the current mode
+                    cmd_name = line.split()[0] if line.split() else ""
+                    cmd_args = ' '.join(line.split()[1:]) if len(line.split()) > 1 else ""
+                    
+                    # Check if command exists in the command set
+                    cmd_functions = [cmd[3:] for cmd in dir(cmd_set) if cmd.startswith('do_')]
+                    if cmd_name in cmd_functions:
+                        try:
+                            func = getattr(cmd_set, f'do_{cmd_name}')
+                            exit_code = func(cmd_args)
+                        except Exception as e:
+                            self.perror(f"Error executing {cmd_name}: {e}")
+                    else:
+                        # Block mode-switching commands
+                        if cmd_name in ['venue', 'ap', 'switch', 'wlan']:
+                            self.poutput(f"Exit current mode first with 'exit' before entering a new configuration mode.")
+                        else:
+                            # Use the main cmd2 processing for global commands
+                            exit_code = self.onecmd_plus_hooks(line)
+                except KeyboardInterrupt:
+                    self.poutput("^C")
+                except Exception as e:
+                    self.perror(f"Error: {e}")
+        finally:
+            # Always remove command set to clean up, even if an exception occurs
+            try:
+                self.unregister_command_set(cmd_set)
+            except Exception as e:
+                # Just log the error but don't raise it to the user
+                self.logger.debug(f"Error unregistering command set: {e}")
     
     # Helper methods
     
@@ -644,7 +687,23 @@ Enter configuration mode with:
 
 def main():
     """Launch the interactive CLI."""
+    import sys
+    import argparse
+    
+    # Parse command-line arguments for interactive mode
+    parser = argparse.ArgumentParser(description='RUCKUS One Interactive CLI')
+    parser.add_argument('--config', '-c', help='Path to config.ini file')
+    
+    args, _ = parser.parse_known_args(sys.argv[1:])
+    
     cli = RuckusOneCLI()
+    
+    # If config file is specified, authenticate automatically
+    if args.config:
+        from cmd2.cmd2 import Statement
+        cmd = f'authenticate -c {args.config}'
+        cli.onecmd_plus_hooks(Statement(cmd))
+        
     cli.cmdloop()
 
 
